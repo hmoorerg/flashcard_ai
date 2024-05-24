@@ -4,12 +4,6 @@ from dotenv import load_dotenv
 import os
 import pandas as pd
 import argparse
-from rich.console import Console
-from prompt_toolkit import PromptSession
-from prompt_toolkit.shortcuts import clear
-from prompt_toolkit.output import ColorDepth
-from prompt_toolkit.layout.layout import Layout
-from prompt_toolkit.widgets import Frame, TextArea
 
 
 class Flashcard:
@@ -100,7 +94,7 @@ def _request_deck(topic: str) -> pd.DataFrame:
     ]
 
     response = client.chat.completions.create(
-        model="gpt-4-1106-preview",
+        model="gpt-4o",
         response_format={ "type": "json_object" },
         messages=[
             {"role": "system", "content": instructions},
