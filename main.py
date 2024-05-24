@@ -1,45 +1,133 @@
-import openai
+import json
+from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import pandas as pd
-import io
 import argparse
+from rich.console import Console
+from prompt_toolkit import PromptSession
+from prompt_toolkit.shortcuts import clear
+from prompt_toolkit.output import ColorDepth
+from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.widgets import Frame, TextArea
+
+
+class Flashcard:
+    def __init__(self, english, hanzi, pinyin, example_sentence, character_meanings = None, usage_notes = None):
+        self.english = english
+        self.hanzi = hanzi
+        self.pinyin = pinyin
+        self.example_sentence = example_sentence
+        self.character_meanings = character_meanings
+        self.usage_notes = usage_notes
+
+    def __repr__(self):
+        return f"Flashcard(English={self.english}, Hanzi={self.hanzi}, Pinyin={self.pinyin}, Example_sentence={self.example_sentence}, Character_meanings={self.character_meanings}, usage_notes={self.usage_notes})"
+
+
+def create_flashcards(flashcards):
+    """
+    Adds the specified flashcards to the user's Anki deck.
+
+    :param flashcards: List of dictionaries, each representing a flashcard.
+                       Each flashcard contains 'English', 'Pinyin', 
+                       'Example sentence', and 'Character meanings'.
+    """
+    df = pd.DataFrame([vars(flashcard) for flashcard in flashcards])
+    print(df)
+
 
 load_dotenv()
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI()
 language = os.getenv("LANGUAGE")
 
 def _generate_prompt(language: str, topic: str) -> str:
-    return f"Give me a {language} flashcard deck about '{topic}'"
+    return f"Give me a {language} flashcard deck about '{topic}'."
 
 def _request_deck(topic: str) -> pd.DataFrame:
-    instructions = f"""You are a flashcard creating bot that creates flashcard decks based off of a topic that help the user learn {language}. Try to create at least 15 flashcards if you can. 
-    
-    # Your task:
-    Output a TSV file with these headers: 'English', '{language}', 'Pinyin', 'Example sentence', 'Example sentence (English)', 'Character meanings'.
-    
-    # Column-specific instrutions:
-    - The 'English' column should include the English translation of the word.
-    - The 'Pinyin' column should include pinyin like 'hóngsè' for the word '红色'.
-    - The 'Example sentence' column should include a sentence that uses the word in context. Only use 汉字, not 拼音.
-    - The 'Character meanings' is a place to write meanings for multi-character terms that might help me remember the whole word (For example, for '服务员' it would be helpful to know that '服务" means "to serve"). Do not provide a definition for the whole word because that is already provided in the 'English' column, just leave the field empty. The format should be either "" or "(hanzi)=(meaning);(hanzi)=(meaning);..." (not including the quotes).
-    
-    # Important notes:
-    Do not break the TSV format! If you do then I will not be able to import the deck into Anki.
-    """
+    instructions = f"""You are a flashcard creating bot that creates flashcard decks based off of a topic that help the user learn {language}. Try to create at least 15 flashcards if you can. Return your output as JSON. Do not include any newline characters like '\n'"""
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "create_flashcards",
+                "description": "Adds the specified flashcards to the user's Anki deck",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "flashcards": {
+                            "type": "array",
+                            "description": "The flashcards to add to the user's deck",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "english": {
+                                        "type": "string",
+                                        "description": "English translation of the word."
+                                    },
+                                    "hanzi": {
+                                        "type": "string",
+                                        "description": "Chinese translation of the word. (in hanzi, not Pinyin)."
+                                    },
+                                    "pinyin": {
+                                        "type": "string",
+                                        "description": "Pinyin representation of the word using tone marks, like 'hóngsè' for the word '红色'."
+                                    },
+                                    "example_sentence": {
+                                        "type": "string",
+                                        "description": "A sentence using the word in context with 汉字.",
+                                    },
+                                    "character_meanings": {
+                                        "type": "string",
+                                        "description": "Meanings for multi-character terms to help remember the whole word, formatted as '(hanzi)=(meaning);(hanzi)=(meaning);...' or an empty string"
+                                    },
+                                    "usage_notes": {
+                                        "type": "string",
+                                        "description": "Additional notes for cases where an extra explanation might be helpful (for example, maybe a word is used frequently with a grammar rule like '了')"
+                                    }
+                                    
+                                },
+                                "required": ["english", "hanzi", "pinyin", "example_sentence"]
+                            }
+                        }
+                    },
+                    "required": ["flashcards"]
+                }
+            }
+        }
+    ]
+
+    response = client.chat.completions.create(
+        model="gpt-4-1106-preview",
+        response_format={ "type": "json_object" },
         messages=[
             {"role": "system", "content": instructions},
             {"role": "user", "content": _generate_prompt(language=language, topic=topic)},
-        ]
+        ],
+        tools=tools,
     )
+    
+    response_message = response.choices[0].message
+    tool_calls = response_message.tool_calls
 
-    text = response["choices"][0]["message"]["content"]
-
-    return pd.read_csv(io.StringIO(text), sep="\t")
+    if tool_calls:
+        available_functions = {
+            "create_flashcards": create_flashcards,
+        }
+        
+        for tool_call in tool_calls:
+            function_name = tool_call.function.name
+            function_to_call = available_functions[function_name]
+            function_args = json.loads(tool_call.function.arguments)
+            
+            flashcards_to_add = [Flashcard(**fc) for fc in function_args.get("flashcards", [])]
+            
+            # Todo: make this a pure function
+            function_to_call(
+                flashcards=flashcards_to_add,
+            )
 
 # Create an argument parser object
 parser = argparse.ArgumentParser(description="A flashcard creating bot")
