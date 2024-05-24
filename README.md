@@ -16,4 +16,4 @@ Here are some examples of what you can ask:
   
 
 ## How do I make it generate flashcards in the correct format?
-I force the LLM to output using valid json and provide it with a `create_flashcards` function to call that is annotated with the required information for each flashcard. This is then put into a pandas dataframe to make it easy to export in many different formats.
+I force the LLM to output using valid json and provide it with a `create_flashcards` function to call that is annotated with the required parameters for each flashcard. This is then put into a pandas dataframe to make it easy to export in many different formats.
