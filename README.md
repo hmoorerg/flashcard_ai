@@ -1,4 +1,4 @@
-# flashcard_ai
+# Flashcard AI
 Quickly generate Flashcard decks for what *you* want to talk about
 
 ![image](https://github.com/hmoorerg/flashcard_ai/assets/5322865/e265daa9-8734-4d1b-95b4-29ca2fe6e581)
